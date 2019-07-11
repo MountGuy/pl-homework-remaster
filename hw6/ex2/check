@@ -1,0 +1,55 @@
+#!/bin/bash
+
+R=$(tput setaf 1)
+G=$(tput setaf 2)
+Y=$(tput setaf 3)
+N=$(tput sgr0)
+BOLD=$(tput bold)
+
+WRONG="${R}✗ Wrong$N"
+CORRECT="${G}✓ Correct$N"
+WARNING="${Y}⚠$N"
+
+TESTDIR="examples"
+
+set -e
+
+echo "-- Compile sources --"
+make
+echo ""
+
+echo "-- Testing CPS-convert (${WARNING} Alpha ver. ) --"
+for FULLNAME in $(find "$TESTDIR"/*.m | sort -V)
+do
+    TEST="$(basename -- "$FULLNAME" .m)"
+    FILE="$TESTDIR/$TEST"
+
+    printf "${BOLD}Testcase: %s$N " "$TEST"
+
+    COMMCPS="./run -checkcps $FILE.m"
+    COMMVAL="./run -checkval $FILE.m"
+
+    FAIL=0
+
+    if ! eval "$COMMCPS"
+    then
+        FAIL=1
+        FAILMSG="Wrong CPS-converted expression"
+    fi
+
+    if ! eval "$COMMVAL"
+    then
+        FAIL=1
+        FAILMSG="Wrong result value"
+    fi
+
+    if [ 1 -eq $FAIL ]
+    then
+        echo "$WRONG : $FAILMSG"
+        eval "./run -pp $FILE.m"
+        echo ""
+    else
+        echo "$CORRECT"
+    fi
+done
+echo "($WARNING Alpha ver. CPS expression check is not reliable. )"

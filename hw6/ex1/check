@@ -1,0 +1,86 @@
+#!/bin/bash
+
+R=$(tput setaf 1)
+G=$(tput setaf 2)
+Y=$(tput setaf 3)
+N=$(tput sgr0)
+BOLD=$(tput bold)
+
+WRONG="${R}✗ Wrong$N"
+CORRECT="${G}✓ Correct$N"
+WARNING="${Y}⚠$N"
+
+TESTDIR="examples"
+HARD_TESTDIR="hard_examples"
+
+function result {
+    if [ 0 -lt "$1"  ]
+    then
+        echo "${WRONG}"
+    else
+        echo "${CORRECT}"
+    fi
+}
+
+set -e
+
+echo "-- Compile sources --"
+make
+echo ""
+
+echo '-- Testing Rozetta: K-- -> Sm5 -> Sonata --'
+for FULLNAME in $(find "$TESTDIR"/*.sm5 | sort -V)
+do
+    TEST="$(basename -- "$FULLNAME" .sm5)"
+    FILE="$TESTDIR/$TEST"
+
+    printf "${BOLD}Testcase: %s$N " "$TEST"
+
+    COMM="./run $FILE.sm5 > $FILE.out 2> $FILE.err"
+    COMMSM5="./run -sm5 $FILE.sm5 > $FILE.ans"
+    if [ -f "$FILE.in" ]
+    then
+        COMM="$COMM < $FILE.in"
+        COMMSM5="$COMMSM5 < $FILE.in"
+    fi
+
+    eval "$COMMSM5"
+
+    if eval "$COMM"
+    then
+        eval "diff $FILE.ans $FILE.out > /dev/null"
+        result $?
+    else
+        echo "$WRONG"
+        cat "$FILE.err"
+    fi
+done
+
+echo ""
+echo "-- Testing Rozetta: Sm5 -> Sonata (${WARNING} HARD) --"
+for FULLNAME in $(find "$HARD_TESTDIR"/*.sm5 | sort -V)
+do
+    TEST="$(basename -- "$FULLNAME" .sm5)"
+    FILE="$HARD_TESTDIR/$TEST"
+
+    printf "${BOLD}Testcase: %s$N " "$TEST"
+
+    COMM="./run $FILE.sm5 > $FILE.out 2> $FILE.err"
+    COMMSM5="./run -sm5 $FILE.sm5 > $FILE.ans"
+    if [ -f "$FILE.in" ]
+    then
+        COMM="${COMM} < $FILE.in"
+        COMMSM5="${COMMSM5} < $FILE.in"
+    fi
+
+    eval "$COMMSM5"
+
+    if eval "$COMM"
+    then
+        eval "diff $FILE.ans $FILE.out > /dev/null"
+        result $?
+    else
+        echo "$WRONG"
+        cat "$FILE.err"
+    fi
+done
