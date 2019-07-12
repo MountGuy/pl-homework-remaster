@@ -311,7 +311,15 @@ struct
       ) in
       let env'' = bind_x_to_y env env' x_list y_list in
       let env''' = Env.bind env'' f (Proc(x_list, e, env')) in
-      eval mem env''' e 
+      eval mem env''' e
+    | RECORD id_exp_list ->
+      let rec run_and_bind mem env id_exp_list ->
+      (
+        match id_exp_list with
+        | (id, exp) :: tail ->
+        | [] -> 
+      ) in
+
     | READ x ->
       let v = Num (read_int()) in
       let l = lookup_env_loc env x in
