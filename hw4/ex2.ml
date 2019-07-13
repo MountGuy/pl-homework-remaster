@@ -11,9 +11,6 @@ type key_var =
   | NODE of key_var * key_var
 type key_equ = key_var * key_var
 
-let debug = false
-
-exception Error of string
 exception IMPOSSIBLE
 
 let count = ref 0
@@ -39,13 +36,11 @@ let rec get_equ map =
       (VAR str, [], [str], [str])
   )
   | Branch (map1, map2) ->
-    let (key1, equs1, boxes1, vars1) = get_equ map1 in
-    let (key2, equs2, boxes2, vars2) = get_equ map2 in
+    let key1, equs1, boxes1, vars1 = get_equ map1 in
+    let key2, equs2, boxes2, vars2 = get_equ map2 in
     let beta = new_var() in
-    let boxes = union boxes1 boxes2 in
-    let vars2' = union [beta] vars2 in
-    let vars = union vars1 vars2' in
-    (VAR beta, (((NODE(key2, (VAR beta))), key1) :: equs1 @ equs2), boxes, vars )
+    let vars = union vars1 (union [beta] vars2) in
+    (VAR beta, (((NODE(key2, (VAR beta))), key1) :: equs1 @ equs2), (union boxes1 boxes2), vars )
   | Guide (str, map) ->
     let (key, equs, boxes, vars) = get_equ map in
     (NODE((VAR str), key)), equs, boxes, vars
@@ -154,7 +149,4 @@ let rec pick_keys boxes sol =
 
 let getReady map =
   let _, equs, boxes, vars = get_equ map in
-  let sol = solve equs in
-  let removed_sol = remove_free_var vars sol in
-
-  pick_keys boxes (refine_sol removed_sol)
+  pick_keys boxes (refine_sol (remove_free_var vars (solve equs)))
