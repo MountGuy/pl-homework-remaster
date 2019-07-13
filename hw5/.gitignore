@@ -1,5 +1,3 @@
-translate.ml
-sm5.ml
 run
 parser.ml
 parser.mli
@@ -9,3 +7,5 @@ lexer.ml
 !examples/*.k--
 *.txt
 gc
+*.cmi
+*.cmo
