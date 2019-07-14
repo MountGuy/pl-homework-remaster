@@ -1,8 +1,7 @@
-*.ml
-!main.ml
-!sm5.mli
-!sonata.mli
-!parser.ml
-!sm5.ml
-!sonata.ml
 run
+*.cmi
+*.cmo
+examples/*.err
+examples/*.out
+hard_examples/*.out
+hard_examples/*.err
