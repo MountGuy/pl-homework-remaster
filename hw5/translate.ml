@@ -25,12 +25,50 @@ module Translator = struct
     | K.ASSIGN (x, e) -> trans e @ [Sm5.PUSH (Sm5.Id x); Sm5.STORE; Sm5.PUSH (Sm5.Id x); Sm5.LOAD]
     | K.SEQ (e1, e2) -> trans e1 @ [Sm5.POP] @ trans e2
     | K.IF (e1, e2, e3) -> trans e1 @ [Sm5.JTR (trans e2, trans e3)]
-(*)    | K.WHILE (e1, e2) ->
-    | K.FOR (x, e1, e2, e3) ->*)
+    | K.WHILE (e1, e2) -> trans (K.LETF("#while", "#1", K.IF(e1, K.SEQ(e2, K.CALLV("#while", K.NUM 1)), K.UNIT), K.CALLV("#while", K.NUM 1)))
+    | K.FOR (x, e1, e2, e3) ->
+      trans
+      (
+        K.LETV("#start", e1, 
+        K.LETV("#end", e2, 
+        K.LETF("#for", "#i", 
+          K.IF(K.LESS(K.VAR "#end", K.VAR "#i"),
+            K.UNIT,
+            K.SEQ(K.ASSIGN(x, K.VAR "#i"),
+            K.SEQ(e3, K.CALLV("#for", K.ADD(K.NUM 1, K.VAR "#i"))))),
+        K.CALLV("#for", K.VAR "#start")))))
     | K.LETV (x, e1, e2) ->
       trans e1 @ [Sm5.MALLOC; Sm5.BIND x; Sm5.PUSH (Sm5.Id x); Sm5.STORE] @
       trans e2 @ [Sm5.UNBIND; Sm5.POP]
-(*)    | K.LETF (f, x, e1, e2) ->*)
+    | K.LETF (f, x, e1, e2) ->
+      [
+        Sm5.PUSH (Sm5.Fn (x, [Sm5.BIND f] @ trans e1));
+        Sm5.BIND f;
+      ] @
+      trans e2 @
+      [
+        Sm5.UNBIND;
+        Sm5.POP
+      ]
+    | K.CALLV (f, e) ->
+      [
+        Sm5.PUSH (Sm5.Id f);
+        Sm5.PUSH (Sm5.Id f)
+      ] @
+      trans e @
+      [
+        Sm5.MALLOC;
+        Sm5.CALL
+      ]
+    | K.CALLR (f, x) ->
+      [
+        Sm5.PUSH (Sm5.Id f);
+        Sm5.PUSH (Sm5.Id f);
+        Sm5.PUSH (Sm5.Id x);
+        Sm5.LOAD;
+        Sm5.PUSH (Sm5.Id x);
+        Sm5.CALL
+      ]
     | K.READ x -> [Sm5.GET; Sm5.PUSH (Sm5.Id x); Sm5.STORE; Sm5.PUSH (Sm5.Id x); Sm5.LOAD]
     | K.WRITE e ->
       trans e @ 
@@ -47,6 +85,5 @@ module Translator = struct
         Sm5.UNBIND;
         Sm5.POP
         ]
-    | _ -> failwith "Unimplemented"
 
 end
