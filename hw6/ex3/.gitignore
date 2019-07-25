@@ -4,5 +4,8 @@
 !main.ml
 !parser.mly
 !pp.ml
+!m.ml
 parser.mli
 run
+examples/*.err
+examples/*.out
