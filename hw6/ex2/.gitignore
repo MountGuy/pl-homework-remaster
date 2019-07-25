@@ -5,6 +5,7 @@
 !m0.mli
 !main.ml
 !parser.mly
+!cps.ml
 
 run
 parser.mli
