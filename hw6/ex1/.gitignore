@@ -5,3 +5,4 @@ examples/*.err
 examples/*.out
 hard_examples/*.out
 hard_examples/*.err
+*.txt
