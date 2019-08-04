@@ -1,4 +1,6 @@
 *.ml
+*.cmi
+*.cmo
 !poly_checker.orig.ml
 !error.ml
 !lexer.mll
