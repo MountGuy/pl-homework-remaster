@@ -2,3 +2,7 @@ run
 lexer.ml
 parser.ml
 parser.mli
+examples/*.err
+examples/*.out
+*.cmi
+*.cmo
