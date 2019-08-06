@@ -21,4 +21,4 @@ main.cmo : sm5.cmo parser.cmo sonata.cmo rozetta.cmo main.ml
 	ocamlc -c main.ml
 
 clean:
-	rm -f *.cmx *.cmi run *.o *.cmo examples/*.out examples/*.err
+	rm -f *.cmx *.cmi run *.o *.cmo examples/*.out examples/*.err hard_examples/*.out hard_examples/*.err
