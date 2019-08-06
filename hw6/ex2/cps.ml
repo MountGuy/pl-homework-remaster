@@ -45,7 +45,6 @@ let rec cps' exp =
   | App (e1, e2) -> 
     let v1 = new_name () in
     let v2 = new_name () in
-    let v3 = new_name () in
     Fn (k, 
         App (cps' e1, 
             Fn (v1, 
