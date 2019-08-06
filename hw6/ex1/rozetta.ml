@@ -15,7 +15,21 @@ let trans_v : Sm5.value -> Sonata.value = function
 let rec trans_obj : Sm5.obj -> Sonata.obj = function
   | Sm5.Val v -> Sonata.Val (trans_v v)
   | Sm5.Id id -> Sonata.Id id
-  | Sm5.Fn (arg, command) -> Sonata.Fn (arg, trans' command @ [])
+  | Sm5.Fn (arg, command) ->
+    Sonata.Fn (arg, 
+    [
+      Sonata.MALLOC;
+      Sonata.BIND "#continue";
+      Sonata.PUSH (Sonata.Id "#continue");
+      Sonata.STORE;  
+    ] @ trans' command @
+    [
+      Sonata.PUSH (Sonata.Id "#continue");
+      Sonata.LOAD;
+      Sonata.PUSH (Sonata.Val (Sonata.Z 0));
+      Sonata.MALLOC;
+      Sonata.CALL;
+    ])
 
 (* TODO : complete this function *)
 and trans' : Sm5.command -> Sonata.command = function
@@ -29,9 +43,50 @@ and trans' : Sm5.command -> Sonata.command = function
   | Sm5.UNBOX id :: cmds -> Sonata.UNBOX id :: (trans' cmds)
   | Sm5.BIND id :: cmds -> Sonata.BIND id :: (trans' cmds)
   | Sm5.UNBIND :: cmds -> Sonata.UNBIND :: (trans' cmds)
-  | Sm5.GET ::cmds -> Sonata.GET :: (trans' cmds)
-  | Sm5.PUT ::cmds -> Sonata.PUT :: (trans' cmds)
-  | Sm5.CALL :: cmds -> failwith "TODO : fill in here"
+  | Sm5.GET :: cmds -> Sonata.GET :: (trans' cmds)
+  | Sm5.PUT :: cmds -> Sonata.PUT :: (trans' cmds)
+  | Sm5.CALL :: cmds -> 
+    [
+      Sonata.PUSH (Sonata.Fn("#x",
+      [
+        Sonata.UNBIND;
+        Sonata.POP
+      ] @ trans' cmds @ 
+      [
+        Sonata.PUSH (Sonata.Id "#continue");
+        Sonata.LOAD;
+        Sonata.PUSH (Sonata.Val (Sonata.Z 0));
+        Sonata.MALLOC;
+        Sonata.CALL;
+      ]));
+      Sonata.MALLOC;
+      Sonata.BIND "#continue";
+      Sonata.PUSH (Sonata.Id "#continue");
+      Sonata.STORE;
+      Sonata.MALLOC;
+      Sonata.BIND "#loc";
+      Sonata.PUSH (Sonata.Id "#loc");
+      Sonata.STORE;
+      Sonata.MALLOC;
+      Sonata.BIND "#val";
+      Sonata.PUSH (Sonata.Id "#val");
+      Sonata.STORE;
+      Sonata.MALLOC;
+      Sonata.BIND "#command";
+      Sonata.PUSH (Sonata.Id "#command");
+      Sonata.STORE;
+
+      Sonata.PUSH (Sonata.Id "#continue");
+      Sonata.LOAD;
+      Sonata.PUSH (Sonata.Id "#command");
+      Sonata.LOAD;
+      Sonata.PUSH (Sonata.Id "#val");
+      Sonata.LOAD;
+      Sonata.PUSH (Sonata.Id "#loc");
+      Sonata.LOAD;
+      Sonata.CALL;
+      
+    ]
   | Sm5.ADD :: cmds -> Sonata.ADD :: (trans' cmds)
   | Sm5.SUB :: cmds -> Sonata.SUB :: (trans' cmds)
   | Sm5.MUL :: cmds -> Sonata.MUL :: (trans' cmds)
@@ -43,4 +98,16 @@ and trans' : Sm5.command -> Sonata.command = function
 
 (* TODO : complete this function *)
 let trans : Sm5.command -> Sonata.command = fun command ->
-  failwith "TODO : fill in here"
+  ([
+    Sonata.PUSH(Sonata.Fn ("#x", []));
+    Sonata.PUSH(Sonata.Fn ("#x", 
+    [
+      Sonata.MALLOC;
+      Sonata.BIND "#continue";
+      Sonata.PUSH (Sonata.Id "#continue");
+      Sonata.STORE;
+    ] @ trans' command));
+    Sonata.PUSH (Sonata.Val (Sonata.Z 0));
+    Sonata.MALLOC;
+    Sonata.CALL
+  ])
