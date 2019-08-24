@@ -38,4 +38,4 @@ lexer.ml: lexer.mll parser.cmo m.cmo
 	ocamllex lexer.mll
 
 clean:
-	rm -f *.cmx *.cmi parser.mli parser.ml lexer.ml run *.o *.cmo example/*.{out, err}
+	rm -f *.cmx *.cmi parser.mli parser.ml lexer.ml run *.o *.cmo examples/*.out examples/*.err
