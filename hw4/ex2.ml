@@ -67,42 +67,21 @@ let rec solve equs =
   match equs with
   | [] -> []
   | equ :: equ_tail ->
-    let lhs, rhs = equ in
     (
-      match lhs with
-      | BAR ->
-      (
-        match rhs with
-        | BAR -> solve equ_tail
-        | VAR x ->
-          let equs' = List.map (fun (l,r) -> (app_to_var l x BAR), (app_to_var r x BAR)) equ_tail in
-          (x, BAR) :: (solve equs')
-        | NODE _ -> raise IMPOSSIBLE
-      )
-      | VAR x ->
-      (
-        match rhs with
-        | BAR ->
-          let equs' = List.map (fun (l,r) -> (app_to_var l x BAR), (app_to_var r x BAR)) equ_tail in
-          (x, BAR) :: (solve equs')
-        | VAR y ->
-          if x = y then solve equ_tail else
-          let equs' = List.map (fun (l,r) -> (app_to_var l x (VAR y)), (app_to_var r x (VAR y))) equ_tail in
-          (x, (VAR y)) :: (solve equs')
-        | NODE (left, right) ->
-          let equs' = List.map (fun (l,r) -> (app_to_var l x (NODE (left, right))), (app_to_var r x (NODE (left, right)))) equ_tail in
-          (x, (NODE (left, right))) :: (solve equs')
-      )
-      | NODE (left, right) ->
-      (
-        match rhs with
-        | BAR -> raise IMPOSSIBLE
-        | VAR x ->
-          let equs' = List.map (fun (l,r) -> (app_to_var l x (NODE (left, right))), (app_to_var r x (NODE (left, right)))) equ_tail in
-          (x, (NODE (left, right))) :: (solve equs')
-        | NODE (left', right') ->
-          solve ((left, left') :: (right, right') :: equ_tail)
-      )
+      match equ with
+      | BAR , BAR -> solve equ_tail
+      | VAR x, VAR y ->
+        if x = y then solve equ_tail else
+        let equs' = List.map (fun (l,r) -> (app_to_var l x (VAR y)), (app_to_var r x (VAR y))) equ_tail in
+        (x, VAR y) :: (solve equs')
+      | key, VAR x
+      | VAR x, key -> 
+        let equs' = List.map (fun (l,r) -> (app_to_var l x key), (app_to_var r x key)) equ_tail in
+        (x, key) :: (solve equs')
+      | BAR,  NODE _
+      | NODE _, BAR -> raise IMPOSSIBLE
+      | NODE (left, right), NODE (left', right') ->
+        solve ((left, left') :: (right, right') :: equ_tail)
     )
 
 let rec remove_free_var vars sol =
