@@ -9,5 +9,7 @@
 
 run
 parser.mli
+*.cmi
+*.cmo
 examples/*.err
 examples/*.out
