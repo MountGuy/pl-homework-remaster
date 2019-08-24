@@ -2,6 +2,7 @@
 *.cmi
 *.cmo
 !poly_checker.orig.ml
+!poly_checker.ml
 !error.ml
 !lexer.mll
 !main.ml
@@ -13,3 +14,5 @@ run
 lexer.ml
 parser.ml
 parser.mli
+examples/*.err
+examples/*.out
