@@ -12,8 +12,8 @@ type typ =
   | TBool
   | TString
   | TPair of typ * typ
-  | TLoc of typ
   | TFun of typ * typ
+  | TLoc of typ
   | TVar of var
   | TEVar of var
   | TWVar of var
@@ -43,9 +43,9 @@ let sub_ftv ftv_1 ftv_2 =
 
 let rec ftv_of_typ : typ -> var list = function
   | TInt | TBool | TString -> []
-  | TPair (t1, t3) -> union_ftv (ftv_of_typ t1) (ftv_of_typ t3)
+  | TPair (t1, t2)
+  | TFun (t1, t2) ->  union_ftv (ftv_of_typ t1) (ftv_of_typ t2)
   | TLoc t -> ftv_of_typ t
-  | TFun (t1, t3) ->  union_ftv (ftv_of_typ t1) (ftv_of_typ t3)
   | TVar v | TEVar v | TWVar v -> [v]
 
 let ftv_of_scheme : typ_scheme -> var list = function
@@ -77,22 +77,22 @@ let make_subst : var -> typ -> subst = fun x t ->
   let rec subs t' =
     match t' with
     | TVar x' | TEVar x' | TWVar x' -> if (x = x') then t else t'
-    | TPair (t1, t3) -> TPair (subs t1, subs t3)
+    | TPair (t1, t2) -> TPair (subs t1, subs t2)
+    | TFun (t1, t2) -> TFun (subs t1, subs t2)
     | TLoc t'' -> TLoc (subs t'')
-    | TFun (t1, t3) -> TFun (subs t1, subs t3)
     | TInt | TBool | TString -> t'
   in subs
 
-let (@@) t3 t3' = (fun t -> t3 (t3' t)) (* substitution composition *)
+let (@@) s s' = (fun t -> s (s' t)) (* substitution composition *)
 
 let rec change_var : var -> var -> typ -> typ = fun x y t ->
   match t with
     | TVar x' -> if (x = x') then TVar y else t
     | TEVar x' -> if (x = x') then TEVar y else t
     | TWVar x' -> if (x = x') then TWVar y else t
-    | TPair (t1, t3) -> TPair (change_var x y t1, change_var x y t3)
+    | TPair (t1, t2) -> TPair (change_var x y t1, change_var x y t2)
+    | TFun (t1, t2) -> TFun (change_var x y t1, change_var x y t2)
     | TLoc t' -> TLoc (change_var x y t')
-    | TFun (t1, t3) -> TFun (change_var x y t1, change_var x y t3)
     | TInt | TBool | TString -> t
 
 let subst_scheme : subst -> typ_scheme -> typ_scheme = fun subs tyscm ->
@@ -123,11 +123,11 @@ let rec expansive exp =
   | M.IF (e1, e2, e3) -> expansive e1 || expansive e2 || expansive e3
   | M.BOP (bop, e1, e2) -> expansive e1 || expansive e2
   | M.READ -> true
+  | M.MALLOC e -> true
   | M.WRITE e
   | M.BANG e
   | M.FST e
   | M.SND e -> expansive e
-  | M.MALLOC e -> true
   | M.ASSIGN (e1, e2)
   | M.SEQ (e1, e2)
   | M.PAIR (e1, e2) -> expansive e1 || expansive e2
@@ -136,7 +136,7 @@ let rec typ_has_x' typ x =
   match typ with
   | TWVar v | TEVar v | TVar v -> v = x 
   | TInt | TBool | TString -> false
-  | TFun (t1, t2) | TPair (t1, t2) -> typ_has_x' t1 x || typ_has_x' t2 x
+  | TPair (t1, t2) | TFun (t1, t2) -> typ_has_x' t1 x || typ_has_x' t2 x
   | TLoc t -> typ_has_x' t x
 
 let typ_has_x typ x =
@@ -241,11 +241,27 @@ let rec w tenv exp =
     let s1, t1 = w tenv e in
     let s2 = unify t1 beta in
     s2 @@ s1, s2 beta
+  | M.MALLOC e ->
+    let s1, t1 = w tenv e in
+    s1, TLoc t1
+  | M.ASSIGN (e1, e2) ->
+    let s1, t1 = w tenv e1 in
+    let s2, t2 = w (subst_env s1 tenv) e2 in
+    let s3 = unify (s2 t1) (TLoc t2) in
+    s3 @@ s2 @@ s1, s3 t2
   | M.BANG e ->
     let beta = TVar(new_var()) in
     let s1, t1 = w tenv e in
     let s2 = unify t1 (TLoc beta) in
     s2 @@ s1, s2 beta
+  | M.SEQ (e1, e2) ->
+    let s1, t1 = w tenv e1 in
+    let s2, t2 = w (subst_env s1 tenv) e2 in
+    s2 @@ s1, t2
+  | M.PAIR (e1, e2) ->
+    let s1, t1 = w tenv e1 in
+    let s2, t2 = w (subst_env s1 tenv) e2 in
+    s2 @@ s1, TPair(s2 t1, t2)
   | M.FST e ->
     let tf = TVar(new_var()) in
     let ts = TVar(new_var()) in
@@ -258,22 +274,6 @@ let rec w tenv exp =
     let s1, t1 = w tenv e in
     let s2 = unify t1 (TPair(tf, ts)) in
     s2 @@ s1, s2 ts
-  | M.MALLOC e ->
-    let s1, t1 = w tenv e in
-    s1, TLoc t1
-  | M.ASSIGN (e1, e2) ->
-    let s1, t1 = w tenv e1 in
-    let s2, t2 = w (subst_env s1 tenv) e2 in
-    let s3 = unify (s2 t1) (TLoc t2) in
-    s3 @@ s2 @@ s1, s3 t2
-  | M.SEQ (e1, e2) ->
-    let s1, t1 = w tenv e1 in
-    let s2, t2 = w (subst_env s1 tenv) e2 in
-    s2 @@ s1, t2
-  | M.PAIR (e1, e2) ->
-    let s1, t1 = w tenv e1 in
-    let s2, t2 = w (subst_env s1 tenv) e2 in
-    s2 @@ s1, TPair(s2 t1, t2)
 
 (* TODO : Implement this function *)
 
