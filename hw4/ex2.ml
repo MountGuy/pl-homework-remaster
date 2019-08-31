@@ -4,128 +4,82 @@ type map =
     End of treasure
   | Branch of map * map
   | Guide of string * map
+exception IMPOSSIBLE
 
 type key_var = 
     BAR 
   | VAR of string 
   | NODE of key_var * key_var
-type key_equ = key_var * key_var
-
-exception IMPOSSIBLE
 
 let count = ref 0
-  
 let new_var () =
-  let _ = count := !count +1 in
+  let _ = count := !count + 1 in
   "x_" ^ (string_of_int !count)
+  
+let union set1 set2 =
+  let set1' = List.filter (fun v -> not (List.mem v set2)) set1 in
+  set1' @ set2
 
-let rec union var_set1 var_set2 =
-  match var_set1 with
-  | [] -> var_set2
-  | var :: var_tail ->
-    let union_var = union var_tail var_set2 in
-    if List.exists (fun x -> x = var) union_var then union_var else var :: union_var
+let empty_subst = fun x -> x
 
-let rec get_equ map =
-  match map with
-  | End treasure ->
-  (
-    match treasure with
-    | StarBox -> (BAR, [], ["*"], ["*"])
-    | NameBox str -> 
-      (VAR str, [], [str], [str])
-  )
-  | Branch (map1, map2) ->
-    let key1, equs1, boxes1, vars1 = get_equ map1 in
-    let key2, equs2, boxes2, vars2 = get_equ map2 in
-    let beta = new_var() in
-    let vars = union vars1 (union [beta] vars2) in
-    (VAR beta, (((NODE(key2, (VAR beta))), key1) :: equs1 @ equs2), (union boxes1 boxes2), vars )
-  | Guide (str, map) ->
-    let (key, equs, boxes, vars) = get_equ map in
-    (NODE((VAR str), key)), equs, boxes, vars
+let rec make_subst x keyv =
+  let rec subs keyv' =
+    match keyv' with
+    | BAR -> BAR
+    | VAR x' -> if x = x' then keyv else keyv'
+    | NODE (keyv1, keyv2) -> NODE (subs keyv1, subs keyv2)
+    in subs
 
-let rec is_const key_var =
-  match key_var with
-  | BAR -> true
-  | NODE (key_var1, key_var2) -> (is_const key_var1) && (is_const key_var2)
-  | _ -> false
+let (@@) sub1 sub2 = (fun keyv -> sub1 (sub2 keyv))
 
-let rec key_var_to_key key_var =
-  match key_var with
-  | BAR -> Bar
-  | NODE (key_var1, key_var2) -> Node(key_var_to_key key_var1, key_var_to_key key_var2)
+let keyv_has_x keyv x =
+  let rec keyv_has_x' keyv x =
+    match keyv with
+    | BAR -> false
+    | NODE (keyv1, keyv2) -> keyv_has_x' keyv1 x || keyv_has_x' keyv2 x
+    | VAR x' -> x = x' in
+  match keyv with
+  | VAR _ -> false
+  | _ -> keyv_has_x' keyv x
+
+let rec unify keyv1 keyv2 =
+  match keyv1, keyv2 with
+  | BAR, BAR -> empty_subst
+  | VAR x, keyv | keyv, VAR x ->
+    if keyv_has_x keyv x then raise IMPOSSIBLE else make_subst x keyv
+  | NODE (keyv1, keyv2), NODE (keyv1', keyv2') ->
+    let s1 = unify keyv1 keyv1' in
+    let s2 = unify (s1 keyv2) (s1 keyv2') in
+    s2 @@ s1
   | _ -> raise IMPOSSIBLE
 
-let rec app_to_var var x x_value =
-  match var with
-  | BAR -> BAR
-  | VAR y -> if x = y then x_value else (VAR y)
-  | NODE (v1, v2) -> NODE(app_to_var v1 x x_value, app_to_var v2 x x_value)
-
-let rec solve equs =
-  match equs with
-  | [] -> []
-  | equ :: equ_tail ->
-    (
-      match equ with
-      | BAR , BAR -> solve equ_tail
-      | VAR x, VAR y ->
-        if x = y then solve equ_tail else
-        let equs' = List.map (fun (l,r) -> (app_to_var l x (VAR y)), (app_to_var r x (VAR y))) equ_tail in
-        (x, VAR y) :: (solve equs')
-      | key, VAR x
-      | VAR x, key -> 
-        let equs' = List.map (fun (l,r) -> (app_to_var l x key), (app_to_var r x key)) equ_tail in
-        (x, key) :: (solve equs')
-      | BAR,  NODE _
-      | NODE _, BAR -> raise IMPOSSIBLE
-      | NODE (left, right), NODE (left', right') ->
-        solve ((left, left') :: (right, right') :: equ_tail)
-    )
-
-let rec remove_free_var vars sol =
-  match vars with
-  | [] -> sol
-  | var :: var_tail ->
-    if List.exists (fun (x,_) -> x = var) sol 
-    then remove_free_var var_tail sol 
-    else
-    (
-      let sol' = List.map (fun (x, y) -> (x, app_to_var y var BAR)) sol in
-      remove_free_var var_tail ((var, BAR) :: sol') 
-    )
-
-let rec remove_var var sol =
-  match var with
-  | BAR -> (BAR, false)
-  | VAR x -> 
-    let _, value = List.find (fun (y,_) -> y = x) sol in
-    if is_const value then (value, true) else (var, false)
-  | NODE (var1, var2) ->
-    let var1', bool1 = remove_var var1 sol in
-    let var2', bool2 = remove_var var2 sol in
-    (NODE(var1', var2')), bool1 || bool2
-
-let rec refine_sol sol =
-  let map (x, var) =
-  (
-    let var', bool = remove_var var sol in
-    (x, var'), bool
-  ) in
-  let sol', bools = List.split (List.map map sol) in
-  if List.exists (fun x -> x) bools then refine_sol sol' else sol'
-
-let rec pick_keys boxes sol =
-  match boxes with
-  | [] -> []
-  | box :: box_tail ->
-    if box = "*" 
-    then union [Bar] (pick_keys box_tail sol) 
-    else 
-      let _, key = (List.find (fun (x,_) -> x = box) sol) in
-      union (pick_keys box_tail sol) [key_var_to_key key]
+let rec solve map subs =
+  match map with
+  | End StarBox -> subs, BAR, ["*"]
+  | End NameBox x -> subs, subs (VAR x), [x]
+  | Branch (map1, map2) ->
+    let s1, keyv1, boxes1 = solve map1 subs in
+    let s2, keyv2, boxes2 = solve map2 s1 in
+    let beta = VAR (new_var()) in
+    let s3 = unify (s2 keyv1) (NODE(keyv2, beta)) in
+    s3 @@ s2, s3 beta, union boxes1 boxes2
+  | Guide (x, map') ->
+    let s, keyv, boxes = solve map' subs in
+    s, NODE (s (VAR x), keyv), boxes
 
 let getReady map =
-  let _, equs, boxes, vars = get_equ map in
-  pick_keys boxes (refine_sol (remove_free_var vars (solve equs)))
+  let s, keyv, boxes = solve map empty_subst in
+  let x_keys = List.map (fun x -> VAR x, s (VAR x)) boxes in
+  let s' = List.fold_left (fun sub (x, keyv) -> (unify x (sub keyv)) @@ sub) empty_subst x_keys in
+  let keys = List.map (fun x -> s' (VAR x)) boxes in
+  let rec keyv_to_key keyv =
+    match keyv with
+    | BAR | VAR _ -> Bar
+    | NODE (keyv1, keyv2) -> Node(keyv_to_key keyv1, keyv_to_key keyv2) in
+  let rec compare_key key1 key2 =
+    match key1, key2 with
+    | Bar, Bar -> 0
+    | Node (k1, k2), Node (k1', k2') -> (compare_key k1 k1') * 100 + (compare_key k2 k2')
+    | Bar, Node _ -> 1 
+    | Node _, Bar -> -1 in
+  List.sort_uniq compare_key (List.map keyv_to_key keys)
