@@ -1,6 +1,6 @@
 *.ml
 !desugar.orig.ml
-desugar.ml
+!desugar.ml
 !xexp.ml
 !xexp.mli
 !main.ml
@@ -9,3 +9,7 @@ desugar.ml
 parser.ml
 parser.mli
 run
+*.cmi
+*.cmo
+examples/*.err
+examples/*.out
