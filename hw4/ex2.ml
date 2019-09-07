@@ -32,19 +32,16 @@ let rec make_subst x keyv =
 
 let (@@) sub1 sub2 = (fun keyv -> sub1 (sub2 keyv))
 
-let keyv_has_x keyv x =
-  let rec keyv_has_x' keyv x =
-    match keyv with
-    | BAR -> false
-    | NODE (keyv1, keyv2) -> keyv_has_x' keyv1 x || keyv_has_x' keyv2 x
-    | VAR x' -> x = x' in
+let rec keyv_has_x keyv x =
   match keyv with
-  | VAR _ -> false
-  | _ -> keyv_has_x' keyv x
+  | BAR -> false
+  | NODE (keyv1, keyv2) -> keyv_has_x keyv1 x || keyv_has_x keyv2 x
+  | VAR x' -> x = x'
 
 let rec unify keyv1 keyv2 =
   match keyv1, keyv2 with
   | BAR, BAR -> empty_subst
+  | VAR x1, VAR x2 -> make_subst x1 keyv2
   | VAR x, keyv | keyv, VAR x ->
     if keyv_has_x keyv x then raise IMPOSSIBLE else make_subst x keyv
   | NODE (keyv1, keyv2), NODE (keyv1', keyv2') ->

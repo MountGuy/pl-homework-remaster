@@ -205,51 +205,36 @@ struct
 
   let rec eval mem env e =
     match e with
-    | NUM n -> (Num n, mem)
-    | TRUE -> (Bool true, mem)
-    | FALSE -> (Bool false, mem)
-    | UNIT -> (Unit, mem)
-    | VAR x -> ((Mem.load mem (lookup_env_loc env x)), mem)
+    | NUM n -> Num n, mem
+    | TRUE -> Bool true, mem
+    | FALSE -> Bool false, mem
+    | UNIT -> Unit, mem
+    | VAR x -> (Mem.load mem (lookup_env_loc env x)), mem
     | ADD (e1, e2) ->
-      let (v1, mem') = eval mem env e1 in
-      let (v2, mem'') = eval mem' env e2 in
-      (Num(value_int v1 + value_int v2), mem'')
+      let v1, mem' = eval mem env e1 in
+      let v2, mem'' = eval mem' env e2 in
+      Num(value_int v1 + value_int v2), mem''
     | SUB (e1, e2) ->
-      let (v1, mem') = eval mem env e1 in
-      let (v2, mem'') = eval mem' env e2 in
-      (Num(value_int v1 - value_int v2), mem'')
+      let v1, mem' = eval mem env e1 in
+      let v2, mem'' = eval mem' env e2 in
+      Num(value_int v1 - value_int v2), mem''
     | MUL (e1, e2) ->
-      let (v1, mem') = eval mem env e1 in
-      let (v2, mem'') = eval mem' env e2 in
-      (Num(value_int v1 * value_int v2), mem'')
+      let v1, mem' = eval mem env e1 in
+      let v2, mem'' = eval mem' env e2 in
+      Num(value_int v1 * value_int v2), mem''
     | DIV (e1, e2) ->
-      let (v1, mem') = eval mem env e1 in
-      let (v2, mem'') = eval mem' env e2 in
-      (Num(value_int v1 / value_int v2), mem'')
+      let v1, mem' = eval mem env e1 in
+      let v2, mem'' = eval mem' env e2 in
+      Num(value_int v1 / value_int v2), mem''
     | EQUAL (e1, e2) ->
-      let (v1, mem') = eval mem env e1 in
-      let (v2, mem'') = eval mem' env e2 in
+      let v1, mem' = eval mem env e1 in
+      let v2, mem'' = eval mem' env e2 in
       (
-        match v1 with
-        | Num n1 ->
-        (
-          match v2 with
-          | Num n2 -> (Bool(n1 = n2), mem'')
-          | _ -> (Bool(false), mem'')
-        )
-        | Bool b1 ->
-        (
-          match v2 with
-          | Bool b2 -> (Bool(b1 = b2), mem'')
-          | _ -> (Bool(false), mem'')
-        )
-        | Unit ->
-        (
-          match v2 with
-          | Unit -> (Bool(true), mem'')
-          | _ -> (Bool(false), mem'')
-        )
-        | _ -> (Bool(false), mem'')
+        match v1, v2 with
+        | Num n1, Num n2 -> Bool(n1 = n2), mem''
+        | Bool b1, Bool b2 -> Bool(b1 = b2), mem''
+        | Unit, Unit -> Bool true, mem''
+        | _ -> Bool false, mem''
       )
     | LESS (e1, e2) ->
       let v1, mem' = eval mem env e1 in
@@ -257,7 +242,7 @@ struct
       Bool(value_int v1 < value_int v2), mem''
     | NOT e ->
       let v, mem' = eval mem env e in
-      (Bool(not(value_bool v)), mem')
+      Bool(not(value_bool v)), mem'
     | SEQ (e1, e2) ->
       let v1, mem' = eval mem env e1 in
       eval mem' env e2
@@ -286,7 +271,7 @@ struct
         | exp_head :: exp_tail ->
           let (v1, mem1) = eval mem env exp_head in
           let (val_list, memn) = eval_exps mem1 env exp_tail in
-          (v1 :: val_list, memn)
+          v1 :: val_list, memn
       ) in
       let rec bind_vals mem env val_list var_list=
       (
@@ -295,12 +280,12 @@ struct
         | v :: tail ->
           let mem', env' = bind_vals mem env tail (List.tl var_list) in
           let l, mem'' = Mem.alloc mem' in
-          ((Mem.store mem'' l v), (Env.bind env' (List.hd var_list) (Addr l)))
+          (Mem.store mem'' l v), (Env.bind env' (List.hd var_list) (Addr l))
       ) in
-      let (var_list, e', env') = lookup_env_proc env f in
+      let var_list, e', env' = lookup_env_proc env f in
       let _ = if List.length exp_list != List.length var_list then raise(Error "InvalidArg") in
-      let (val_list, mem') = eval_exps mem env exp_list in
-      let (mem'', env'') = bind_vals mem' env' val_list var_list in
+      let val_list, mem' = eval_exps mem env exp_list in
+      let mem'', env'' = bind_vals mem' env' val_list var_list in
       let env''' = Env.bind env'' f (Proc(var_list, e', env')) in
       eval mem'' env''' e'
     | CALLR (f, y_list) ->
@@ -322,7 +307,7 @@ struct
         | (id, exp) :: tail -> 
           let v1, mem1 = eval mem env exp in
           let record, memn = run_and_bind mem1 env tail in
-          let (l, memn') = Mem.alloc memn in
+          let l, memn' = Mem.alloc memn in
           (fun x -> if x = id then l else record x), Mem.store memn' l v1
         | [] -> (fun x -> raise (Error "Unbound")), mem
       ) in
@@ -345,12 +330,12 @@ struct
       let l = lookup_env_loc env x in
       v, Mem.store mem l v
     | WRITE e ->
-      let (v, mem') = eval mem env e in
+      let v, mem' = eval mem env e in
       let n = value_int v in
       let _ = print_endline (string_of_int n) in
       v, mem'
 
   let run (mem, env, pgm) =
-    let (v, _ ) = eval mem env pgm in
+    let v, _  = eval mem env pgm in
     v
 end
