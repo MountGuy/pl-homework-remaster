@@ -11,7 +11,7 @@ type var = string
 let count = ref 0 
 
 let new_var () = 
-  let _ = count := !count +1 in
+  let _ = count := !count + 1 in
   "x_" ^ (string_of_int !count)
 
 type typ = 
@@ -22,136 +22,168 @@ type typ =
   | TLoc of typ
   | TFun of typ * typ
   | TVar of var
+  | TEVar of var
+  | TWVar of var
   (* Modify, or add more if needed *)
 
-type typ_env = var -> typ
+let (@+) (var, typ) tenv = fun x -> if x = var then typ else tenv x
 
-type equ = typ * typ
+let empty_subst = fun t -> t
 
-let (@+) tenv (var, typ) = fun x -> if x = var then typ else tenv x
+let make_subst = fun x t ->
+  let rec subs t' =
+    match t' with
+    | TVar x' | TEVar x' | TWVar x' -> if (x = x') then t else t'
+    | TPair (t1, t2) -> TPair (subs t1, subs t2)
+    | TFun (t1, t2) -> TFun (subs t1, subs t2)
+    | TLoc t'' -> TLoc (subs t'')
+    | TInt | TBool | TString -> t'
+  in subs
+
+let (@@) s s' = (fun t -> s (s' t)) (* substitution composition *)
 
 let empty_tenv = fun x -> raise (M.TypeError "Wrong access of type environment")
 
-let rec make_equ exp tenv =
+let rec typ_has_x' typ x =
+  match typ with
+  | TWVar v | TEVar v | TVar v -> v = x 
+  | TInt | TBool | TString -> false
+  | TPair (t1, t2) | TFun (t1, t2) -> typ_has_x' t1 x || typ_has_x' t2 x
+  | TLoc t -> typ_has_x' t x
+
+let typ_has_x typ x =
+  match typ with
+  | TWVar _ | TEVar _ | TVar _ | TInt | TBool | TString -> false
+  | _-> typ_has_x' typ x
+
+let rec unify typ1 typ2 =
+  match typ1, typ2 with
+  | TInt, TInt
+  | TBool, TBool
+  | TString, TString -> empty_subst
+  | TWVar v, typ | typ, TWVar v ->
+    (
+      if typ_has_x typ v then raise (M.TypeError "invalid") else
+      match typ with
+      | TWVar v' | TEVar v' | TVar v' -> make_subst v' (TWVar v)
+      | TInt | TBool | TString -> make_subst v typ
+      | _ -> raise (M.TypeError "unify1")
+    )
+  | TEVar v, typ | typ, TEVar v ->
+    (
+      if typ_has_x typ v then raise (M.TypeError "invalid") else
+      match typ with
+      | TEVar v' | TVar v' -> make_subst v' (TEVar v)
+      | TInt | TBool | TString | TLoc _ -> make_subst v typ 
+      | _ -> raise (M.TypeError "unify2")
+    )
+  | TVar v, typ | typ, TVar v -> 
+    if typ_has_x typ v then raise (M.TypeError "invalid") else make_subst v typ
+  | TPair (t1, t2), TPair (t1', t2')
+  | TFun (t1, t2), TFun (t1', t2') ->
+    let s = unify t1 t1' in
+    let s' = unify (s t2) (s t2') in
+    s' @@ s
+  | TLoc l1, TLoc l2 -> unify l1 l2
+  | _ -> raise (M.TypeError "unify3")
+
+let rec w tenv exp =
   match exp with
-  | M.CONST c -> (
-    match c with
-    | M.N i -> TInt, []
-    | M.B b -> TBool, []
-    | M.S s -> TString, []
-  )
-  | M.VAR x -> tenv x, []
-  | M.FN (x, e) ->
-    let v1 = new_var() in
-    let t1 = TVar v1 in
-    let t2, equs = make_equ e (tenv @+ (x, t1)) in
-    TFun (t1, t2), equs
+  | M.CONST (M.N _) -> empty_subst, TInt
+  | M.CONST (M.B _) -> empty_subst, TBool
+  | M.CONST (M.S _) -> empty_subst, TString
+  | M.VAR x -> empty_subst, (tenv x)
+  | M.FN (x, e) -> 
+    let beta = TVar (new_var()) in
+    let s1, t1 = w ((x, beta) @+ tenv) e in
+    s1, TFun (s1 beta, t1)
   | M.APP (e1, e2) ->
-    let t1, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 tenv in
-    let t3 = TVar (new_var()) in
-    t3, equs1 @ equs2 @ [TFun (t2, t3), t1]
+    let s1, t1 = w tenv e1 in
+    let s2, t2 = w (s1 @@ tenv) e2 in
+    let beta = TVar(new_var()) in
+    let s3 = unify (s2 t1) (TFun (t2, beta)) in
+    s3 @@ s2 @@ s1, s3 beta
   | M.LET (M.VAL (x, e1), e2) ->
-    let t1, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 (tenv @+ (x, t1)) in
-    t2, equs1 @ equs2
-  | M.LET (M.REC (f, x, body), e) ->
-    let t1 = TVar (new_var()) in
-    let t2 = TVar (new_var()) in
-    let t3, equs3 = make_equ body ((tenv @+ (x, t1)) @+ (f, TFun (t1, t2))) in
-    let t4, equs4 = make_equ e (tenv @+ (f, TFun (t1, t2))) in
-    t4, equs3 @ equs4 @ [t2, t3]
+    let s1, t1 = w tenv e1 in
+    let s2, t2 = w ((x, t1) @+ (s1 @@ tenv)) e2 in
+    s2 @@ s1, t2
+  | M.LET (M.REC (f, x, e1), e2) ->
+    let beta = TVar(new_var()) in
+    let s1, t1 = w ((f, beta) @+ tenv) (M.FN(x, e1)) in
+    let s2 = unify (s1 beta) t1 in
+    let s3, t3 = w ((f, (s2 t1)) @+ tenv) e2 in
+    s3 @@ s2 @@ s1, t3
   | M.IF (e1, e2, e3) ->
-    let t1, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 tenv in
-    let t3, equs3 = make_equ e3 tenv in
-    t2, equs1 @ equs2 @ equs3 @ [t1, TBool; t2, t3]
+    let s1, t1 = w tenv e1 in
+    let s2 = unify t1 TBool in
+    let s3, t3 = w ((s2 @@ s1) @@ tenv) e2 in
+    let s4, t4 = w ((s3 @@ s2 @@ s1) @@ tenv) e3 in
+    let s5 = unify (s4 t3) t4 in
+    s5 @@ s4 @@ s3 @@ s2 @@ s1, (s5 t4)
   | M.BOP (M.ADD, e1, e2)
   | M.BOP (M.SUB, e1, e2) ->
-    let t1, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 tenv in
-    TInt, equs1 @ equs2 @ [t1, TInt; t2, TInt]
+    let s1, t1 = w tenv e1 in
+    let s2 = unify TInt t1 in
+    let s3, t3 = w ((s2 @@ s1) @@ tenv) e2 in
+    let s4 = unify TInt t3 in
+    s4 @@ s3 @@ s2 @@ s1, TInt
   | M.BOP (M.EQ, e1, e2) ->
-    let t1, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 tenv in
-    TBool, equs1 @ equs2 @ [t1, t2]
+    let s1, t1 = w tenv e1 in
+    let beta = TEVar(new_var()) in
+    let s2 = unify beta t1 in
+    let s3, t3 = w ((s2 @@ s1) @@ tenv) e2 in
+    let s4 = unify ((s3 @@ s2) beta) t3 in
+    s4 @@ s3 @@ s2 @@ s1, TBool
   | M.BOP (M.AND, e1, e2)
   | M.BOP (M.OR, e1, e2) ->
-    let t1, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 tenv in
-    TBool, equs1 @ equs2 @ [t1, TBool; t2, TBool]
-  | M.READ -> TInt, []
-  | M.WRITE e -> make_equ e tenv
+    let s1, t1 = w tenv e1 in
+    let s2 = unify TBool t1 in
+    let s3, t3 = w ((s2 @@ s1) @@ tenv) e2 in
+    let s4 = unify TBool t3 in
+    s4 @@ s3 @@ s2 @@ s1, TBool
+  | M.READ -> empty_subst, TInt
+  | M.WRITE e ->
+    let beta = TWVar(new_var()) in
+    let s1, t1 = w tenv e in
+    let s2 = unify t1 beta in
+    s2 @@ s1, s2 beta
   | M.MALLOC e ->
-    let t, equs = make_equ e tenv in
-    TLoc t, equs
+    let s1, t1 = w tenv e in
+    s1, TLoc t1
   | M.ASSIGN (e1, e2) ->
-    let t1, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 tenv in
-    t2, equs1 @ equs2 @ [TLoc t2, t1]
+    let s1, t1 = w tenv e1 in
+    let s2, t2 = w (s1 @@ tenv) e2 in
+    let s3 = unify (s2 t1) (TLoc t2) in
+    s3 @@ s2 @@ s1, s3 t2
   | M.BANG e ->
-    let t, equs = make_equ e tenv in
-    let t1 = TVar (new_var()) in
-    t1, equs @ [t, TLoc t1]
+    let beta = TVar(new_var()) in
+    let s1, t1 = w tenv e in
+    let s2 = unify t1 (TLoc beta) in
+    s2 @@ s1, s2 beta
   | M.SEQ (e1, e2) ->
-    let _, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 tenv in
-    t2, equs1 @ equs2
+    let s1, t1 = w tenv e1 in
+    let s2, t2 = w (s1 @@ tenv) e2 in
+    s2 @@ s1, t2
   | M.PAIR (e1, e2) ->
-    let t1, equs1 = make_equ e1 tenv in
-    let t2, equs2 = make_equ e2 tenv in
-    TPair (t1, t2), equs1 @ equs2
+    let s1, t1 = w tenv e1 in
+    let s2, t2 = w (s1 @@ tenv) e2 in
+    s2 @@ s1, TPair(s2 t1, t2)
   | M.FST e ->
-    let t, equs = make_equ e tenv in
-    let t1 = TVar (new_var()) in
-    let t2 = TVar (new_var()) in
-    t1, equs @ [t, TPair (t1, t2)]
+    let tf = TVar(new_var()) in
+    let ts = TVar(new_var()) in
+    let s1, t1 = w tenv e in
+    let s2 = unify t1 (TPair(tf, ts)) in
+    s2 @@ s1, s2 tf
   | M.SND e ->
-    let t, equs = make_equ e tenv in
-    let t1 = TVar (new_var()) in
-    let t2 = TVar (new_var()) in
-    t2, equs @ [t, TPair (t1, t2)]
-
-let rec app_sol typ_sol x typ =
-  match typ with
-  | TInt
-  | TBool
-  | TString -> typ
-  | TPair (t1, t2) -> TPair (app_sol typ_sol x t1, app_sol typ_sol x t2)
-  | TLoc t -> TLoc (app_sol typ_sol x t)
-  | TFun (t1, t2) -> TFun (app_sol typ_sol x t1, app_sol typ_sol x t2)
-  | TVar t -> if t = x then typ_sol else TVar t
-
-let rec solve_equ equs =
-  match equs with
-  | equ :: equ_tail ->
-  (
-    match equ with
-    | TInt, TInt
-    | TBool, TBool
-    | TString, TString -> solve_equ equ_tail
-    | typ, TVar v
-    | TVar v, typ ->
-      let equ_tail' = List.map (fun (t1, t2) -> (app_sol typ v t1, app_sol typ v t2)) equ_tail in
-      (v, typ) :: (solve_equ equ_tail')
-    | TPair (t1f, t1s), TPair (t2f, t2s) -> solve_equ ([t1f, t2f; t1s, t2s] @ equ_tail)
-    | TFun (t1x, t1f), TFun (t2x, t2f) -> solve_equ ([t1x, t2x; t1f, t2f] @ equ_tail)
-    | TLoc (t1), TLoc (t2) -> solve_equ ([t1, t2] @ equ_tail)
-    | _ -> raise (M.TypeError "Invalid expression")
-  )
-  | [] -> []
+    let tf = TVar(new_var()) in
+    let ts = TVar(new_var()) in
+    let s1, t1 = w tenv e in
+    let s2 = unify t1 (TPair(tf, ts)) in
+    s2 @@ s1, s2 ts
 
 (* TODO : Implement this function *)
 let check : M.exp -> M.types = fun exp ->
-  let t, equs = make_equ exp empty_tenv in
-  let sols = solve_equ equs in
-
-  let rec remove_var typ sols =
-    match sols with
-    | [] -> typ
-    | (v, t) :: sol_tail -> remove_var (app_sol t v typ) sol_tail in
-  let t' = remove_var t sols in
-
+  let s, typ = w (fun x -> (TVar x)) exp in
   let rec tvar_to_m_typ t =
     match t with
     | TInt -> M.TyInt
@@ -161,4 +193,4 @@ let check : M.exp -> M.types = fun exp ->
     | TLoc t -> M.TyLoc (tvar_to_m_typ t)
     | TFun (t1, t2) -> M.TyArrow (tvar_to_m_typ t1, tvar_to_m_typ t2)
     | _ -> raise (M.TypeError "Invalid expression") in
-  tvar_to_m_typ t'
+  tvar_to_m_typ typ
