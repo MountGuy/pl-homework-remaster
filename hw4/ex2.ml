@@ -17,8 +17,6 @@ let new_var () =
   let _ = count := !count + 1 in
   "x_" ^ (string_of_int !count)
 
-let empty_subst = fun x -> x
-
 let rec make_subst x keyv =
   let rec subs keyv' =
     match keyv' with
@@ -37,7 +35,7 @@ let rec keyv_has_x keyv x =
 
 let rec unify keyv1 keyv2 =
   match keyv1, keyv2 with
-  | BAR, BAR -> empty_subst
+  | BAR, BAR -> fun x -> x
   | VAR x1, VAR x2 -> make_subst x1 keyv2
   | VAR x, keyv | keyv, VAR x ->
     if keyv_has_x keyv x then raise IMPOSSIBLE else make_subst x keyv
@@ -62,9 +60,9 @@ let rec solve map subs =
     s, NODE (s (VAR x), keyv), boxes
 
 let getReady map =
-  let s, keyv, boxes = solve map empty_subst in
+  let s, keyv, boxes = solve map (fun x -> x) in
   let x_keys = List.map (fun k -> k, s k) boxes in
-  let sol = List.fold_left (fun sub (x, keyv) -> (unify x (sub keyv)) @@ sub) empty_subst x_keys in
+  let sol = List.fold_left (fun sub (x, keyv) -> (unify x (sub keyv)) @@ sub) (fun x -> x) x_keys in
   let keys = List.map (fun x -> sol x) boxes in
   let rec keyv_to_key keyv =
     match keyv with
