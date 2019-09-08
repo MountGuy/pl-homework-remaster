@@ -42,43 +42,26 @@ let make_subst = fun x t ->
 
 let (@@) s s' = (fun t -> s (s' t)) (* substitution composition *)
 
-let empty_tenv = fun x -> raise (M.TypeError "Wrong access of type environment")
-
-let rec typ_has_x' typ x =
+let rec typ_has_x typ x =
   match typ with
   | TWVar v | TEVar v | TVar v -> v = x 
   | TInt | TBool | TString -> false
-  | TPair (t1, t2) | TFun (t1, t2) -> typ_has_x' t1 x || typ_has_x' t2 x
-  | TLoc t -> typ_has_x' t x
-
-let typ_has_x typ x =
-  match typ with
-  | TWVar _ | TEVar _ | TVar _ | TInt | TBool | TString -> false
-  | _-> typ_has_x' typ x
+  | TPair (t1, t2) | TFun (t1, t2) -> typ_has_x t1 x || typ_has_x t2 x
+  | TLoc t -> typ_has_x t x
 
 let rec unify typ1 typ2 =
   match typ1, typ2 with
-  | TInt, TInt
-  | TBool, TBool
-  | TString, TString -> empty_subst
-  | TWVar v, typ | typ, TWVar v ->
-    (
-      if typ_has_x typ v then raise (M.TypeError "invalid") else
-      match typ with
-      | TWVar v' | TEVar v' | TVar v' -> make_subst v' (TWVar v)
-      | TInt | TBool | TString -> make_subst v typ
-      | _ -> raise (M.TypeError "unify1")
-    )
-  | TEVar v, typ | typ, TEVar v ->
-    (
-      if typ_has_x typ v then raise (M.TypeError "invalid") else
-      match typ with
-      | TEVar v' | TVar v' -> make_subst v' (TEVar v)
-      | TInt | TBool | TString | TLoc _ -> make_subst v typ 
-      | _ -> raise (M.TypeError "unify2")
-    )
-  | TVar v, typ | typ, TVar v -> 
-    if typ_has_x typ v then raise (M.TypeError "invalid") else make_subst v typ
+  | TInt, TInt | TBool, TBool | TString, TString -> empty_subst
+  | TWVar v, TInt | TWVar v, TBool | TWVar v, TString | TWVar v, TWVar _ 
+  | TEVar v, TInt | TEVar v, TBool | TEVar v, TString | TEVar v, TWVar _ 
+  | TVar v, TWVar _ | TEVar v, TEVar _ | TVar v, TEVar _ | TVar v, TVar _ -> make_subst v typ2
+  | TInt, TWVar v | TBool, TWVar v | TString, TWVar v 
+  | TInt, TEVar v | TBool, TEVar v | TString, TEVar v
+  | TWVar _, TEVar v | TWVar _, TVar v | TEVar _, TVar v -> make_subst v typ1
+  | TEVar v, TLoc typ | TLoc typ, TEVar v ->
+    if typ_has_x typ v then raise (M.TypeError "unify2") else make_subst v (TLoc typ) 
+  | TVar v, typ | typ, TVar v ->
+    if typ_has_x typ v then raise (M.TypeError "unify2") else make_subst v typ
   | TPair (t1, t2), TPair (t1', t2')
   | TFun (t1, t2), TFun (t1', t2') ->
     let s = unify t1 t1' in

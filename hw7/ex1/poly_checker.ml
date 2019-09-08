@@ -114,59 +114,36 @@ let instantize tyscm =
 
 let rec expansive exp =
   match exp with
-  | M.CONST _ -> false
-  | M.VAR _ -> false
-  | M.FN   _ -> false
-  | M.APP _ -> true
-  | M.LET (M.REC _, e) -> expansive e
-  | M.LET (M.VAL (x, e'), e) -> expansive e || expansive e'
-  | M.IF (e1, e2, e3) -> expansive e1 || expansive e2 || expansive e3
-  | M.BOP (bop, e1, e2) -> expansive e1 || expansive e2
-  | M.READ -> true
-  | M.MALLOC e -> true
-  | M.WRITE e
-  | M.BANG e
-  | M.FST e
-  | M.SND e -> expansive e
+  | M.CONST _ | M.VAR _ | M.FN   _ -> false
+  | M.APP _ | M.READ | M.MALLOC _ -> true
+  | M.LET (M.REC _, e) | M.WRITE e | M.BANG e | M.FST e | M.SND e -> expansive e
+  | M.LET (M.VAL (_, e1), e2)
+  | M.BOP (_, e1, e2)
   | M.ASSIGN (e1, e2)
   | M.SEQ (e1, e2)
   | M.PAIR (e1, e2) -> expansive e1 || expansive e2
+  | M.IF (e1, e2, e3) -> expansive e1 || expansive e2 || expansive e3
 
-let rec typ_has_x' typ x =
+let rec typ_has_x typ x =
   match typ with
   | TWVar v | TEVar v | TVar v -> v = x 
   | TInt | TBool | TString -> false
-  | TPair (t1, t2) | TFun (t1, t2) -> typ_has_x' t1 x || typ_has_x' t2 x
-  | TLoc t -> typ_has_x' t x
-
-let typ_has_x typ x =
-  match typ with
-  | TWVar _ | TEVar _ | TVar _ | TInt | TBool | TString -> false
-  | _-> typ_has_x' typ x
+  | TPair (t1, t2) | TFun (t1, t2) -> typ_has_x t1 x || typ_has_x t2 x
+  | TLoc t -> typ_has_x t x
 
 let rec unify typ1 typ2 =
   match typ1, typ2 with
-  | TInt, TInt
-  | TBool, TBool
-  | TString, TString -> empty_subst
-  | TWVar v, typ | typ, TWVar v ->
-    (
-      if typ_has_x typ v then raise (M.TypeError "invalid") else
-      match typ with
-      | TWVar v' | TEVar v' | TVar v' -> make_subst v' (TWVar v)
-      | TInt | TBool | TString -> make_subst v typ
-      | _ -> raise (M.TypeError "unify1")
-    )
-  | TEVar v, typ | typ, TEVar v ->
-    (
-      if typ_has_x typ v then raise (M.TypeError "invalid") else
-      match typ with
-      | TEVar v' | TVar v' -> make_subst v' (TEVar v)
-      | TInt | TBool | TString | TLoc _ -> make_subst v typ 
-      | _ -> raise (M.TypeError "unify2")
-    )
-  | TVar v, typ | typ, TVar v -> 
-    if typ_has_x typ v then raise (M.TypeError "invalid") else make_subst v typ
+  | TInt, TInt | TBool, TBool | TString, TString -> empty_subst
+  | TWVar v, TInt | TWVar v, TBool | TWVar v, TString | TWVar v, TWVar _ 
+  | TEVar v, TInt | TEVar v, TBool | TEVar v, TString | TEVar v, TWVar _ 
+  | TVar v, TWVar _ | TEVar v, TEVar _ | TVar v, TEVar _ | TVar v, TVar _ -> make_subst v typ2
+  | TInt, TWVar v | TBool, TWVar v | TString, TWVar v 
+  | TInt, TEVar v | TBool, TEVar v | TString, TEVar v
+  | TWVar _, TEVar v | TWVar _, TVar v | TEVar _, TVar v -> make_subst v typ1
+  | TEVar v, TLoc typ | TLoc typ, TEVar v ->
+    if typ_has_x typ v then raise (M.TypeError "unify2") else make_subst v (TLoc typ) 
+  | TVar v, typ | typ, TVar v ->
+    if typ_has_x typ v then raise (M.TypeError "unify2") else make_subst v typ
   | TPair (t1, t2), TPair (t1', t2')
   | TFun (t1, t2), TFun (t1', t2') ->
     let s = unify t1 t1' in
@@ -194,13 +171,10 @@ let rec w tenv exp =
     let s3 = unify (s2 t1) (TFun (t2, beta)) in
     s3 @@ s2 @@ s1, s3 beta
   | M.LET (M.VAL (x, e1), e2) ->
-    if expansive e1 then
-      let s1, t1 = w tenv e1 in
-      let s2, t2 = w ([x, SimpleTyp t1] @ (subst_env s1 tenv)) e2 in
-      (s2 @@ s1), t2 else
-      let s1, t1 = w tenv e1 in
-      let s2, t2 = w ([x, generalize (subst_env s1 tenv) t1] @ (subst_env s1 tenv)) e2 in
-      s2 @@ s1, t2
+    let s1, t1 = w tenv e1 in
+    let sche_t1 = if expansive e1 then SimpleTyp t1 else generalize (subst_env s1 tenv) t1 in
+    let s2, t2 = w ([x, sche_t1] @ (subst_env s1 tenv)) e2 in
+    s2 @@ s1, t2
   | M.LET (M.REC (f, x, e1), e2) ->
     let beta = TVar(new_var()) in
     let s1, t1 = w ([f, SimpleTyp beta] @ tenv) (M.FN(x, e1)) in
