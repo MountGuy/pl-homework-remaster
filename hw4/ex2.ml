@@ -11,12 +11,6 @@ type key_var =
   | VAR of string 
   | NODE of key_var * key_var
 
-let count = ref 0
-
-let new_var () =
-  let _ = count := !count + 1 in
-  "x_" ^ (string_of_int !count)
-
 let rec make_subst x keyv =
   let rec subs keyv' =
     match keyv' with
@@ -45,22 +39,22 @@ let rec unify keyv1 keyv2 =
     s2 @@ s1
   | _ -> raise IMPOSSIBLE
 
-let rec solve map subs =
+let rec solve map subs count =
   match map with
-  | End StarBox -> subs, BAR, [VAR "*"]
-  | End NameBox x -> subs, subs (VAR x), [VAR x]
+  | End StarBox -> subs, BAR, [VAR "*"], count
+  | End NameBox x -> subs, subs (VAR x), [VAR x], count
   | Branch (map1, map2) ->
-    let s1, keyv1, boxes1 = solve map1 subs in
-    let s2, keyv2, boxes2 = solve map2 s1 in
-    let beta = VAR (new_var()) in
+    let s1, keyv1, boxes1, count' = solve map1 subs count in
+    let s2, keyv2, boxes2, count'' = solve map2 s1 count' in
+    let beta = VAR ("x_" ^ (string_of_int count'')) in
     let s3 = unify (s2 keyv1) (NODE (keyv2, beta)) in
-    s3 @@ s2, s3 beta, boxes1 @ boxes2
+    s3 @@ s2, s3 beta, boxes1 @ boxes2, count'' + 1
   | Guide (x, map') ->
-    let s, keyv, boxes = solve map' subs in
-    s, NODE (s (VAR x), keyv), boxes
+    let s, keyv, boxes, count' = solve map' subs count in
+    s, NODE (s (VAR x), keyv), boxes, count'
 
 let getReady map =
-  let s, keyv, boxes = solve map (fun x -> x) in
+  let s, keyv, boxes, _ = solve map (fun x -> x) 0 in
   let x_keys = List.map (fun k -> k, s k) boxes in
   let sol = List.fold_left (fun sub (x, keyv) -> (unify x (sub keyv)) @@ sub) (fun x -> x) x_keys in
   let keys = List.map (fun x -> sol x) boxes in
@@ -68,4 +62,4 @@ let getReady map =
     match keyv with
     | BAR | VAR _ -> Bar
     | NODE (keyv1, keyv2) -> Node (keyv_to_key keyv1, keyv_to_key keyv2) in
-  List.sort_uniq compare (List.map keyv_to_key keys)
+  List.sort_uniq compare (List.map keyv_to_key keys)e
