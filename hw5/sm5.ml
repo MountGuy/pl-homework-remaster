@@ -214,6 +214,45 @@ struct
       (* TODO : Add the code that marks the reachable locations.
        * let _ = ... 
        *)
+      let lookup_record record = fst (List.split (snd (List.split record))) in
+      let lookup_val value = match value with | L (b, _) -> [b] | R r -> lookup_record r | _ -> [] in
+      
+      let rec lookup_cmd cmd =
+        match cmd with
+        | PUSH obj -> lookup_obj obj
+        | JTR (com1, com2) -> lookup_com com1 @ lookup_com com2
+        | _ -> []
+      and lookup_com com = List.concat (List.map lookup_cmd com)
+      and lookup_obj obj =
+        match obj with 
+        | Val v -> lookup_val v 
+        | Fn (f, cmd) -> lookup_com cmd
+        | _ -> [] in
+
+      let rec lookup_eval evalue = match evalue with | Loc (b, _) -> [b] | Proc p -> lookup_proc p
+      and lookup_env env = List.concat (List.map (fun (_, e) -> lookup_eval e) env)
+      and lookup_proc (_, com, env) = lookup_com com @ lookup_env env in
+
+      let lookup_sval svalue =
+        match svalue with
+        | V v -> lookup_val v
+        | P p -> lookup_proc p
+        | M (_, eval) -> lookup_eval eval in
+      
+      let lookup_stack stack = List.concat (List.map lookup_sval stack) in
+      let lookup_cont cont = List.concat (List.map (fun (c, e) -> lookup_com c @ lookup_env e) cont) in
+
+      let rec lookup_mem locs =
+        let mem' = List.filter (fun ((b, _), v) -> List.mem b locs) m in
+        let locs' = List.sort_uniq compare (locs @ List.concat (List.map (fun (_, v) -> lookup_val v) mem')) in
+        if List.length locs' > List.length locs then lookup_mem locs' else locs' in
+
+      let initail_locs = List.sort_uniq compare (lookup_stack s @ lookup_env e @ lookup_com c @ lookup_cont k) in
+      let all_locs = fst (List.split m) in
+
+      let locs = lookup_mem initail_locs in
+      let _ = reachable_locs := List.filter (fun (b, _) -> List.mem b locs) all_locs in
+
       let new_m = List.filter (fun (l, _) -> List.mem l !reachable_locs) m in
       if List.length new_m < mem_limit then
         let _ = loc_id := !loc_id + 1 in
